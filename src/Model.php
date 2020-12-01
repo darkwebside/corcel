@@ -1,11 +1,5 @@
 <?php
 
-/**
- * Base model.
- *
- * @author Mickael Burguet <www.rundef.com>
- * @author Junior Grossi <juniorgro@gmail.com>
- */
 namespace Corcel;
 
 use Illuminate\Database\Eloquent\Collection;
@@ -16,22 +10,35 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Str;
 
+/**
+ * Class Model
+ *
+ * @package Corcel
+ * @author Mickael Burguet <www.rundef.com>
+ * @author Junior Grossi <juniorgro@gmail.com>
+ */
 class Model extends Eloquent
 {
     /**
-     * Replace the original hasMany function to forward the connection name
+     * @var string
+     */
+    protected $postType;
+
+    /**
+     * Replace the original hasMany function to forward the connection name.
      *
      * @param string $related
-     * @param null $foreignKey
-     * @param null $localKey
-     * @return Illuminate\Database\Eloquent\Relations\HasMany
+     * @param string $foreignKey
+     * @param string $localKey
+     * @return HasMany
      */
     public function hasMany($related, $foreignKey = null, $localKey = null)
     {
         $foreignKey = $foreignKey ?: $this->getForeignKey();
 
-        $instance = new $related();
-        $instance->setConnection($this->getConnection()->getName());
+        $instance = $this->setInstanceConnection(
+            new $related()
+        );
 
         $localKey = $localKey ?: $this->getKeyName();
 
@@ -39,48 +46,49 @@ class Model extends Eloquent
     }
 
     /**
-     * Replace the original hasOne function to forward the connection name
+     * Replace the original hasOne function to forward the connection name.
      *
      * @param string $related
-     * @param null $foreignKey
-     * @param null $localKey
-     * @return Illuminate\Database\Eloquent\Relations\HasOne
+     * @param string $foreignKey
+     * @param string $localKey
+     * @return HasOne
      */
     public function hasOne($related, $foreignKey = null, $localKey = null)
     {
         $foreignKey = $foreignKey ?: $this->getForeignKey();
 
-        $instance = new $related;
-        $instance->setConnection($this->getConnection()->getName());
+        $instance = $this->setInstanceConnection(
+            new $related()
+        );
 
         $localKey = $localKey ?: $this->getKeyName();
 
-        return new HasOne($instance->newQuery(), $this, $instance->getTable() . '.' . $foreignKey, $localKey);
+        return new HasOne($instance->newQuery(), $this, $instance->getTable().'.'.$foreignKey, $localKey);
     }
 
     /**
-     * Replace the original belongsTo function to forward the connection name
+     * Replace the original belongsTo function to forward the connection name.
      *
      * @param string $related
-     * @param null $foreignKey
-     * @param null $otherKey
-     * @param null $relation
-     * @return Illuminate\Database\Eloquent\Relations\BelongsTo
+     * @param string $foreignKey
+     * @param string $otherKey
+     * @param string $relation
+     * @return BelongsTo
      */
     public function belongsTo($related, $foreignKey = null, $otherKey = null, $relation = null)
     {
         if (is_null($relation)) {
-            list($current, $caller) = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2);
-
+            list(, $caller) = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2);
             $relation = $caller['function'];
         }
 
         if (is_null($foreignKey)) {
-            $foreignKey = Str::snake($relation) . '_id';
+            $foreignKey = Str::snake($relation).'_id';
         }
 
-        $instance = new $related();
-        $instance->setConnection($this->getConnection()->getName());
+        $instance = $this->setInstanceConnection(
+            new $related()
+        );
 
         $query = $instance->newQuery();
 
@@ -90,39 +98,45 @@ class Model extends Eloquent
     }
 
     /**
-     * Replace the original belongsToMany function to forward the connection name
+     * Replace the original belongsToMany function to forward the connection name.
      *
      * @param string $related
-     * @param null $table
-     * @param null $foreignKey
-     * @param null $otherKey
-     * @param null $relation
-     * @return Illuminate\Database\Eloquent\Relations\BelongsToMany
+     * @param string $table
+     * @param string $foreignPivotKey
+     * @param string $relatedPivotKey
+     * @param string $parentKey
+     * @param string $relatedKey
+     * @param string $relation
+     * @return BelongsToMany
      */
-    public function belongsToMany($related, $table = null, $foreignKey = null, $otherKey = null, $relation = null)
+    public function belongsToMany($related, $table = null, $foreignPivotKey = null, $relatedPivotKey = null,
+                                  $parentKey = null, $relatedKey = null, $relation = null)
     {
         if (is_null($relation)) {
-            $relation = $this->getBelongsToManyCaller();
+            $relation = $this->guessBelongsToManyRelation();
         }
 
-        $foreignKey = $foreignKey ?: $this->getForeignKey();
+        $instance = $this->setInstanceConnection(
+            $this->newRelatedInstance($related)
+        );
 
-        $instance = new $related();
-        $instance->setConnection($this->getConnection()->getName());
+        $foreignPivotKey = $foreignPivotKey ?: $this->getForeignKey();
 
-        $otherKey = $otherKey ?: $instance->getForeignKey();
+        $relatedPivotKey = $relatedPivotKey ?: $instance->getForeignKey();
 
         if (is_null($table)) {
             $table = $this->joiningTable($related);
         }
 
-        $query = $instance->newQuery();
-
-        return new BelongsToMany($query, $this, $table, $foreignKey, $otherKey, $relation);
+        return new BelongsToMany(
+            $instance->newQuery(), $this, $table, $foreignPivotKey,
+            $relatedPivotKey, $parentKey ?: $this->getKeyName(),
+            $relatedKey ?: $instance->getKeyName(), $relation
+        );
     }
 
     /**
-     * Get the relation value setting the connection name
+     * Get the relation value setting the connection name.
      *
      * @param string $key
      * @return mixed
@@ -145,7 +159,7 @@ class Model extends Eloquent
     }
 
     /**
-     * Set the connection name to model
+     * Set the connection name to model.
      *
      * @param $model
      */
@@ -154,5 +168,31 @@ class Model extends Eloquent
         if ($model instanceof Eloquent) {
             $model->setConnection($this->getConnectionName());
         }
+    }
+
+    /**
+     * @return string
+     */
+    public function getConnectionName()
+    {
+        if (!isset($this->connection) && Corcel::isLaravel()) {
+            if ($connection = config('corcel.connection')) {
+                $this->connection = $connection;
+            }
+        }
+
+        return $this->connection;
+    }
+
+    /**
+     * @param $instance
+     */
+    protected function setInstanceConnection($instance)
+    {
+        return $instance->setConnection(
+            $instance instanceof self ?
+                $this->getConnection()->getName() :
+                $instance->getConnection()->getName()
+        );
     }
 }
